@@ -1,11 +1,11 @@
 # 복구 검증
 
-STM32는 10월 백업에서 확인한 LCD 원본을 로컬에서만 연결했습니다. I²C·GPIO·USART 설정, UART 수신 큐, TCP 수신 및 요청 응답, MariaDB 재현 스키마는 이번에 보완했습니다.
+STM32는 10월 백업과 바이트가 동일한 LCD 원본을 `Core/Src/lcd1602.c`에 복구했습니다. I²C·GPIO·USART 설정, UART 수신 큐, TCP 수신 및 요청 응답, MariaDB 재현 스키마는 이번에 보완했습니다.
 
 | 상태 | 범위 | 재실행 방법과 결과 |
 |---|---|---|
-| PASS | STM32 ARM GCC 14.2.1 | `make clean && make LCD_SOURCE=/path/to/lcd1602.c`로 ELF 생성 |
-| PASS | 원본 LCD 및 UART HAL 모의 | `tests/mock_console.sh /path/to/lcd1602.c`로 LCD 부팅 문구·I²C 전송 주소, A/B/C 요청, Matrix·부저 호출, 5초 복귀, 센서 오류, 연속 4프레임 및 큐 초과 후 복구 확인 |
+| PASS | STM32 ARM GCC 14.2.1 | `make clean && make`로 ELF 생성 |
+| PASS | 원본 LCD 및 UART HAL 모의 | `tests/mock_console.sh`로 LCD 부팅 문구·I²C 전송 주소, A/B/C 요청, Matrix·부저 호출, 5초 복귀, 센서 오류, 연속 4프레임 및 큐 초과 후 복구 확인 |
 | PASS | Arduino Uno | `arduino-cli compile -b arduino:avr:uno arduino/waste_bin`의 Uno 빌드·링크 확인. AVR Core 1.8.7, WiFiEsp 2.2.2, MsTimer2 1.1 사용 |
 | PASS | C TCP 서버 | `gcc -Wall -Wextra raspberry/food_server.c -o food_server $(mariadb_config --cflags --libs)`에 해당하는 컴파일·링크 검증. x86_64에서 MariaDB Connector/C 공유 라이브러리를 연결 |
 | PASS | TCP 수신 코드 | `cc -ffunction-sections -fdata-sections tests/mock_tcp.c -Wl,--gc-sections,--wrap=read -o /tmp/waste-mock-tcp && /tmp/waste-mock-tcp`. 분할 메시지, LF/CRLF, 쓰기 종료, 수신 타임아웃, 버퍼 초과 확인 |
