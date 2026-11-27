@@ -286,9 +286,11 @@ class BinSource:
             import pymysql
             if self.conn is None:
                 self.conn = pymysql.connect(
-                    host=self.db.get("host", "127.0.0.1"), port=int(self.db.get("port", 3306)),
-                    user=self.db.get("user", ""), password=self.db.get("password", ""),
-                    database=self.db.get("database", ""), charset="utf8mb4",
+                    host=os.getenv("WASTE_DB_HOST", self.db.get("host", "127.0.0.1")),
+                    port=int(os.getenv("WASTE_DB_PORT", self.db.get("port", 3306))),
+                    user=os.getenv("WASTE_DB_USER", self.db.get("user", "iot")),
+                    password=os.getenv("WASTE_DB_PASSWORD", self.db.get("password", "")),
+                    database=os.getenv("WASTE_DB_NAME", self.db.get("database", "iotdb")), charset="utf8mb4",
                     connect_timeout=3, autocommit=True)   # autocommit: 매번 새 행이 보이게
             with self.conn.cursor() as cur:
                 cur.execute("SELECT bin_a, bin_b, bin_c, created_at FROM food_bin ORDER BY id DESC LIMIT 1")

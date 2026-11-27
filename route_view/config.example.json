@@ -6,13 +6,13 @@
   "poll_seconds": 2,
   "save_seconds": 2,
   "threshold": 75,
-  "output_dir": "/var/www/html/webcam/route",
+  "output_dir": "/var/www/html/route",
   "draw_grid": false,
   "db": {
     "host": "127.0.0.1",
     "port": 3306,
     "user": "iot",
-    "password": "CHANGE_ME",
+    "password": "",
     "database": "iotdb"
   },
   "bins": {
