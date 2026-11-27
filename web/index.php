@@ -27,7 +27,7 @@ $today_count = 0;
 if ($count_result && $count_result->num_rows > 0)
     $today_count = (int)$count_result->fetch_assoc()["total"];
 
-// 수거 경로: /home/pi/food_project/webcam/route_view.py 가 route/ 폴더에 route.jpg, status.json 을 2초마다 저장
+// 수거 경로: route_view/route_view.py 가 route/ 폴더에 route.jpg, status.json 을 2초마다 저장
 $route_img = __DIR__ . "/route/route.jpg";
 $route = null;
 if (is_file(__DIR__ . "/route/status.json"))

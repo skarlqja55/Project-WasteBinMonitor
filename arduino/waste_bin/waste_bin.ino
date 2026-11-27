@@ -248,9 +248,11 @@ uint8_t ledRBit[3];
 
 // ==================================================
 
-char ssid[] = "kcci603";
+#include "network_config.h"
 
-char pass[] = "CHANGE_ME";  // 팀 환경 Wi-Fi 비밀번호로 변경
+char ssid[] = WASTE_WIFI_SSID;
+
+char pass[] = WASTE_WIFI_PASSWORD;
 
 
 
@@ -266,7 +268,7 @@ char pass[] = "CHANGE_ME";  // 팀 환경 Wi-Fi 비밀번호로 변경
 
 // ==================================================
 
-char server[] = "10.10.16.70";
+char server[] = WASTE_SERVER_HOST;
 
 
 
