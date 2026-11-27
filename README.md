@@ -95,7 +95,7 @@ Arduino는 빈 통 거리 `EMPTY_DISTANCE`와 만재 거리 `FULL_DISTANCE`를 �
 
 관련 코드: [main.c](Core/Src/main.c), [dot_map.c](Core/Src/dot_map.c), [buzzer.c](Core/Src/buzzer.c), [LCD 헤더](Core/Inc/lcd1602.h)
 
-현재 저장소에는 LCD 헤더와 호출 코드는 있으나 `LCD_Init()` 등의 구현 소스가 확인되지 않습니다. STM32 빌드를 재현하려면 실습 때 사용한 LCD 구현 파일을 추가로 준비해야 합니다.
+LCD 구현은 10월 백업과 동일한 원본을 로컬에서 연결해 검증했습니다. 원본 파일의 재배포 권한 확인이 필요해 공개 소스에 포함하지 않았습니다. 제공받은 파일을 연결하는 방법은 [STM32 빌드](#9-6-stm32)에 있습니다.
 
 ### 웹 관제와 수거 기록
 
@@ -140,7 +140,7 @@ TCP 포트는 실행 예시에서 `5000`을 사용합니다. 메시지는 `@`로
 | Pi → STM32 | `STATUS@78@20@55\n` | 관제 장치 상태 갱신 |
 | 사용자 웹 → Pi → STM32 | `REQUEST@A\n` | A통 수거 요청 |
 
-HC-06과 STM32 사이에는 USART1을 사용합니다. 서버는 `/dev/rfcomm0`으로 Bluetooth 메시지를 전송합니다.
+HC-06과 STM32 사이에는 USART1을 사용합니다. 서버는 `/dev/rfcomm0`으로 Bluetooth 메시지를 전송합니다. TCP는 연결마다 한 프레임을 처리합니다. 서버는 LF 또는 송신 측 쓰기 종료로 프레임을 구분하고, 수신이 2초 동안 멈추면 연결을 닫습니다. PHP에는 RFCOMM 쓰기를 마치면 `OK\n`, 쓰지 못하면 `ERR\n`을 반환합니다. 이 응답으로 STM32 수신이나 실제 LCD 표시 여부까지 확인할 수는 없습니다.
 
 ## 7. 데이터베이스
 
@@ -152,7 +152,7 @@ HC-06과 STM32 사이에는 USART1을 사용합니다. 서버는 `/dev/rfcomm0`�
 | `collection_history` | `id`, `bin_name`, `collected_at` | 자동 수거 추정 기록 |
 | `request_history` | `bin_name` | 사용자 요청 기록 |
 
-**저장소에는 DB 생성용 SQL 파일이 포함되어 있지 않습니다.** 실행 전에 기존 실습 DB를 복원하거나 코드의 조회·삽입에 맞는 테이블, 기본값, 계정 권한을 준비해야 합니다. 위 표는 코드에서 확인되는 항목이며 전체 원본 스키마는 아닙니다.
+[재현용 초기화 SQL](raspberry/sql/init.sql)은 현재 C·PHP·Python이 사용하는 세 테이블을 만듭니다. 기존 DB를 유지해야 하는 환경에서는 적용 전에 테이블 정의를 비교합니다. 이 SQL은 저장소의 쿼리를 근거로 새로 작성했습니다.
 
 발표자료에는 `bins`, `data_quality_log`와 이상값 검사 트리거도 설명되어 있습니다. 해당 DB 정의와 트리거 배포 파일은 현재 저장소에서 확인되지 않으므로 별도 실습 자료가 필요합니다. 경로 프로그램의 통 좌표는 현재 JSON 설정에서 읽습니다.
 
@@ -183,14 +183,18 @@ sudo apt update
 sudo apt install build-essential mariadb-server libmariadb-dev apache2 php php-mysql bluez python3-opencv python3-numpy python3-pymysql
 ```
 
-DB 준비 후 다음 파일의 접속 정보를 실제 환경에 맞춥니다. 코드의 기본 DB 계정은 `iot`, DB 이름은 `iotdb`입니다.
+빈 DB에서는 `sudo mariadb < raspberry/sql/init.sql`로 테이블을 생성합니다. MariaDB에 앱용 계정을 따로 만들고 `iotdb.*`에 대한 SELECT·INSERT 권한을 부여합니다.
 
-- `raspberry/food_server.c`
-- `web/index.php`
-- `web/request.php`
-- `route_view/config.json` — 아래에서 예제로부터 복사
+C 서버, PHP, Python에 같은 접속 정보를 전달합니다. 호스트·포트·계정·DB의 기본값은 각각 `127.0.0.1`, `3306`, `iot`, `iotdb`입니다. 값이 다른 환경에서는 `WASTE_DB_HOST`, `WASTE_DB_PORT`, `WASTE_DB_USER`, `WASTE_DB_NAME`을 설정합니다.
 
-실제 비밀번호와 로컬 설정 파일은 공개 저장소에 올리지 않습니다.
+Bash에서는 비밀번호를 입력 이력에 남기지 않고 실행 환경에 전달할 수 있습니다.
+
+```bash
+read -r -s -p "MariaDB password: " WASTE_DB_PASSWORD
+export WASTE_DB_PASSWORD
+```
+
+Apache/PHP 환경에도 동일한 변수를 서비스 설정으로 전달합니다. 서비스 설정과 비밀번호는 문서 루트 외부에서 관리합니다. C 서버 포트를 바꾸면 PHP의 `WASTE_TCP_PORT`와 Arduino 소스의 포트도 맞춥니다.
 
 ### 9-2. Bluetooth와 TCP 서버
 
@@ -211,8 +215,7 @@ gcc raspberry/food_server.c -o food_server $(mariadb_config --cflags --libs)
 ### 9-3. 웹 배포
 
 ```bash
-sudo cp web/index.php /var/www/html/index.php
-sudo cp web/request.php /var/www/html/request.php
+sudo cp web/{index,request,db}.php /var/www/html/
 ```
 
 - 관리자: `http://<PI_IP>/index.php`
@@ -226,7 +229,7 @@ sudo cp web/request.php /var/www/html/request.php
 cp route_view/config.example.json route_view/config.json
 ```
 
-`config.json`에서 DB 비밀번호, 카메라 번호, 통 좌표, 도로를 맞춥니다. 관리자 PHP를 위처럼 `/var/www/html`에 배치했다면 **`output_dir`도 `/var/www/html/route`로 변경**합니다. 예제의 `/var/www/html/webcam/route`를 그대로 사용하면 PHP가 읽는 위치와 달라집니다.
+`config.json`에서 카메라 번호, 통 좌표, 도로를 맞춥니다. 관리 페이지가 읽는 위치에 맞춰 예제는 `/var/www/html/route`에 `route.jpg`와 `status.json`을 출력합니다. 다른 문서 루트를 사용하면 출력 디렉터리도 그 아래의 `route`로 설정합니다.
 
 프로그램 실행 계정에는 경로 출력 디렉터리 쓰기 권한을, Apache에는 읽기 권한을 설정합니다. 예를 들어 현재 사용자가 프로그램을 실행하고 Apache 그룹이 `www-data`인 환경에서는 다음과 같이 준비할 수 있습니다.
 
@@ -273,11 +276,19 @@ STM32CubeIDE에서 저장소 루트의 기존 프로젝트를 가져옵니다. `
 | HC-06 TX → STM32 RX | PA10 / D2 |
 | HC-06 RX ← STM32 TX | PA9 / D8 |
 | 디버그 UART | USART2, 115200bps |
-| LCD I2C | I2C1, SCL PB8 / SDA PB9 |
+| LCD I2C | I2C1 100 kHz, SCL PB8 (D15) / SDA PB9 (D14), 7비트 0x27 (HAL 0x4E) |
 | Matrix DATA / CLK / LATCH | PA7 / PA6 / PB6 |
 | 부저 | PA0 / TIM2_CH1 |
 
-먼저 누락된 LCD 구현 소스를 복원한 뒤 `waste-bin` 프로젝트를 빌드하고 ST-LINK로 다운로드합니다. 현재 ZIP만으로는 LCD 함수의 구현을 확인할 수 없어 완전한 빌드 재현을 보장할 수 없습니다. `waste-bin.ioc`에서 코드를 다시 생성할 경우 UART 속도와 수신 인터럽트 설정을 확인합니다.
+공개 권한이 있는 내부 사본을 구했다면 저장소 안에 복사하지 않고 해당 파일을 빌드에 지정할 수 있습니다.
+
+```bash
+make clean
+make LCD_SOURCE=/absolute/path/to/lcd1602.c
+tests/mock_console.sh /absolute/path/to/lcd1602.c
+```
+
+보드에 올릴 파일은 `build/waste-bin.elf`입니다. CubeIDE에서도 자체 보유한 LCD 원본을 `Core/Src/lcd1602.c`에 로컬로 복원한 다음 빌드할 수 있습니다. `waste-bin.ioc`를 재생성한 경우 생성된 파일과 수동 보완 코드를 비교한 뒤 적용합니다. CubeMX 재생성 자체는 별도로 확인해야 합니다. HAL I2C 파일은 [ST STM32F4 HAL v1.8.5](https://github.com/STMicroelectronics/stm32f4xx-hal-driver/tree/v1.8.5)에서 가져왔습니다.
 
 ## 10. 트러블슈팅 경험
 

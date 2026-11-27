@@ -17,3 +17,6 @@ build/
 food_server
 route.jpg
 status.json
+
+# Team LCD source, available only to authorized users
+/Core/Src/lcd1602.c
