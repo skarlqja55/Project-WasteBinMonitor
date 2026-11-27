@@ -34,6 +34,8 @@ Arduino의 초음파 센서 데이터를 Wi-Fi/TCP로 Raspberry Pi에 전달합�
 | **남기범** | **프로그래밍 총괄, 하드웨어 제작, 배선 일부 담당** |
 | 노현주 | 하드웨어 제작 및 배선 담당, 프로그래밍 일부 |
 
+직접 동작을 따라보려면 [센서 수신·수거 판정](raspberry/food_server.c), [관제 장치 출력](Core/Src/main.c), [수거 경로 계산](route_view/route_view.py) 순서로 보면 됩니다.
+
 ## 3. 시스템 구성과 데이터 흐름
 
 ```mermaid
@@ -256,7 +258,7 @@ python3 route_view/route_view.py --demo --camera -1
 Arduino IDE에서 `arduino/waste_bin/waste_bin.ino`를 열고 UNO 보드를 선택합니다.
 
 - 사용 라이브러리: `SoftwareSerial`, `WiFiEsp`, `MsTimer2`
-- Wi-Fi SSID·비밀번호, Pi IP, TCP 포트를 실제 환경에 맞춤
+- 스케치 폴더의 `network_config.example.h`를 같은 폴더에 `network_config.h`로 복사한 뒤 Wi-Fi SSID·비밀번호와 Raspberry Pi 주소를 입력합니다. 이 로컬 설정은 Git에서 제외됩니다. `port`는 서버에서 사용한 TCP 포트로 맞춥니다.
 - ESP-01 AT 펌웨어와 통신 속도 `38400bps` 확인
 - `EMPTY_DISTANCE`, `FULL_DISTANCE`를 통 크기에 맞게 보정
 - 센서와 LED는 [pinmap.md](pinmap.md)에 따라 연결
@@ -288,6 +290,10 @@ STM32CubeIDE에서 저장소 루트의 기존 프로젝트를 가져옵니다. `
 **원인과 조치:** 느슨하게 꽂힌 배선이 OPEN으로 판정되어, 해당 배선을 다시 꽂아 문제를 해결했습니다.
 
 이 방법은 해당 실습 회로에서 부유 입력을 찾는 보조 진단입니다. 저항값이나 접촉 상태를 정밀 측정하거나 모든 단선을 확정하는 검사는 아닙니다.
+
+| 현상 | 확인 방법 | 해결 |
+|---|---|---|
+| 배선 후 도트매트릭스가 꺼져 있었습니다. | `DM_ReadPinState()`에서 풀업·풀다운을 바꿔 읽어 OPEN 후보 핀을 찾았습니다. | 헐거운 배선을 다시 꽂은 뒤 점등을 확인했습니다. |
 
 ### 실행 환경 점검
 
