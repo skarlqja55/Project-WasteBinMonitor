@@ -1,45 +1,42 @@
 <?php
+require_once __DIR__ . "/db.php";
 $message = "";
 
-if ($_SERVER["REQUEST_METHOD"] === "POST")
-{
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $bin = $_POST["bin"] ?? "";
+    if (in_array($bin, ["A", "B", "C"], true)) {
+        try {
+            $conn = waste_db();
+            $stmt = $conn->prepare("INSERT INTO request_history (bin_name) VALUES (?)");
+            $stmt->bind_param("s", $bin);
+            $stmt->execute();
+            $stmt->close();
+            $conn->close();
 
-    if (in_array($bin, ["A", "B", "C"]))
-    {
-        $conn = new mysqli("127.0.0.1", "iot", "CHANGE_ME", "iotdb");
-
-        if ($conn->connect_error)
-            die("DB 연결 실패");
-
-        $stmt = $conn->prepare(
-            "INSERT INTO request_history (bin_name) VALUES (?)"
-        );
-
-        if ($stmt === false)
-            die("DB prepare 실패");
-
-        $stmt->bind_param("s", $bin);
-
-        if ($stmt->execute())
-        {
-            $socket = fsockopen("127.0.0.1", 5000, $errno, $errstr, 2);
-
-            if ($socket)
-            {
-                fwrite($socket, "REQUEST@" . $bin . "\n");
+            $socket = @fsockopen("127.0.0.1", (int)(getenv("WASTE_TCP_PORT") ?: "5000"), $errno, $errstr, 2);
+            $acknowledged = false;
+            if ($socket) {
+                stream_set_timeout($socket, 3);
+                $line = "REQUEST@" . $bin . "\n";
+                $acknowledged = fwrite($socket, $line) === strlen($line)
+                    && fgets($socket, 8) === "OK\n";
                 fclose($socket);
             }
 
-            $message = $bin . " 쓰레기통 수거 요청이 접수되었습니다.";
-        }
-        else
-        {
+            if ($acknowledged) {
+                $message = $bin . " 쓰레기통 수거 요청이 관제 장치로 전송되었습니다.";
+            } else {
+                http_response_code(502);
+                $message = "요청 기록은 저장됐지만 관제 장치로의 전송을 확인하지 못했습니다.";
+            }
+        } catch (RuntimeException $error) {
+            error_log($error->getMessage());
+            http_response_code(503);
             $message = "수거 요청 저장에 실패했습니다.";
         }
-
-        $stmt->close();
-        $conn->close();
+    } else {
+        http_response_code(400);
+        $message = "올바른 쓰레기통을 선택해 주세요.";
     }
 }
 ?>

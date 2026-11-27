@@ -1,7 +1,12 @@
 <?php
-$conn = new mysqli("127.0.0.1", "iot", "CHANGE_ME", "iotdb");
-if ($conn->connect_error) die("DB CONNECT ERROR : " . $conn->connect_error);
-$conn->set_charset("utf8mb4");
+require_once __DIR__ . "/db.php";
+try {
+    $conn = waste_db();
+} catch (RuntimeException $error) {
+    error_log($error->getMessage());
+    http_response_code(503);
+    exit("DB 연결 실패");
+}
 
 $status_result = $conn->query(
     "SELECT bin_a, bin_b, bin_c, created_at FROM food_bin ORDER BY id DESC LIMIT 1"

@@ -86,11 +86,15 @@ UART_HandleTypeDef huart2;
 
 uint8_t rxData;
 
-char rxBuffer[64];
-char messageBuffer[64];
-
-volatile int rxIndex = 0;
-volatile int messageReady = 0;
+/* One producer (USART1 IRQ) and one consumer (main loop). */
+#define RX_QUEUE_SIZE 8u
+#define RX_LINE_SIZE 64u
+static char rxQueue[RX_QUEUE_SIZE][RX_LINE_SIZE];
+static uint8_t rxHead;
+static uint8_t rxTail;
+static size_t rxIndex;
+static uint8_t rxDiscard;
+volatile uint32_t uartDroppedLines;
 
 int bin_a = 0;
 int bin_b = 0;
@@ -123,54 +127,8 @@ static void MX_I2C1_Init(void);
 
 /* USER CODE BEGIN 0 */
 
-/* USER CODE END 0 */
-
-/**
-
-  * @brief  The application entry point.
-
-  * @retval int
-
-  */
-
-int main(void)
-
+static void App_Init(void)
 {
-
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
-  HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-
-  MX_GPIO_Init();
-
-  MX_USART1_UART_Init();
-
-  MX_USART2_UART_Init();
-
-  MX_I2C1_Init();
-
-  /* USER CODE BEGIN 2 */
-
   DM_Map_Init();
 
   Buzzer_Init();
@@ -193,20 +151,10 @@ int main(void)
 
   HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), 100);
 
-  /* USER CODE END 2 */
+}
 
-  /* Infinite loop */
-
-  /* USER CODE BEGIN WHILE */
-
-  while (1)
-
-  {
-
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-
+static void App_Tick(void)
+{
     // 8x8 화면 계속 Refresh
     DM_Map_Loop();
 
@@ -214,18 +162,18 @@ int main(void)
     Buzzer_Loop();
 
     // 사용자 수거 요청 표시가 5초 지나면 기존 상태 화면으로 복귀
-    if (requestDisplayActive && HAL_GetTick() >= requestDisplayUntil)
+    if (requestDisplayActive && (int32_t)(HAL_GetTick() - requestDisplayUntil) >= 0)
     {
         requestDisplayActive = 0;
         LCD_UpdateBins(bin_a, bin_b, bin_c);
     }
 
-    if (messageReady)
+    uint8_t tail = __atomic_load_n(&rxTail, __ATOMIC_RELAXED);
+    if (tail != __atomic_load_n(&rxHead, __ATOMIC_ACQUIRE))
     {
-        char temp[64];
-
-        strcpy(temp, messageBuffer);
-        messageReady = 0;
+        char temp[RX_LINE_SIZE];
+        strcpy(temp, rxQueue[tail]);
+        __atomic_store_n(&rxTail, (tail + 1u) % RX_QUEUE_SIZE, __ATOMIC_RELEASE);
 
         char *ptr = strtok(temp, "@");
 
@@ -348,6 +296,73 @@ int main(void)
             }
         }
     }
+}
+
+/* USER CODE END 0 */
+
+/**
+
+  * @brief  The application entry point.
+
+  * @retval int
+
+  */
+
+int main(void)
+
+{
+
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+
+  MX_GPIO_Init();
+
+  MX_USART1_UART_Init();
+
+  MX_USART2_UART_Init();
+
+  MX_I2C1_Init();
+
+  /* USER CODE BEGIN 2 */
+
+  App_Init();
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+
+  /* USER CODE BEGIN WHILE */
+
+  while (1)
+
+  {
+
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+
+    App_Tick();
 }
 /* USER CODE END 3 */
 
@@ -674,67 +689,44 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-
 {
+    if (huart->Instance != USART1)
+        return;
 
-    if (huart->Instance == USART1)
-
+    uint8_t head = __atomic_load_n(&rxHead, __ATOMIC_RELAXED);
+    uint8_t next = (head + 1u) % RX_QUEUE_SIZE;
+    if (rxData == '\n' || rxData == '\r')
     {
-
-        if (!messageReady)
-
+        if (rxDiscard || (rxIndex != 0 && next == __atomic_load_n(&rxTail, __ATOMIC_ACQUIRE)))
+            uartDroppedLines++;
+        else if (rxIndex != 0)
         {
-
-            if (rxData == '\n' || rxData == '\r')
-
-            {
-
-                if (rxIndex > 0)
-
-                {
-
-                    rxBuffer[rxIndex] = '\0';
-
-                    strcpy(messageBuffer, rxBuffer);
-
-                    messageReady = 1;
-
-                    rxIndex = 0;
-
-                }
-
-            }
-
-            else
-
-            {
-
-                if (rxIndex < sizeof(rxBuffer) - 1)
-
-                {
-
-                    rxBuffer[rxIndex++] = rxData;
-
-                }
-
-                else
-
-                {
-
-                    rxIndex = 0;
-
-                }
-
-            }
-
+            rxQueue[head][rxIndex] = '\0';
+            __atomic_store_n(&rxHead, next, __ATOMIC_RELEASE);
         }
-
-        /* 다음 1 byte 계속 수신 */
-
-        HAL_UART_Receive_IT(&huart1, &rxData, 1);
-
+        rxIndex = 0;
+        rxDiscard = 0;
+    }
+    else if (!rxDiscard)
+    {
+        if (rxIndex < RX_LINE_SIZE - 1)
+            rxQueue[head][rxIndex++] = (char)rxData;
+        else
+            rxDiscard = 1;
     }
 
+    HAL_UART_Receive_IT(huart, &rxData, 1);
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance != USART1)
+        return;
+
+    /* Skip the frame interrupted by a hardware error and resume at a delimiter. */
+    rxDiscard = 1;
+    if (huart->RxState == HAL_UART_STATE_READY)
+        HAL_UART_Receive_IT(huart, &rxData, 1);
 }
 
 /* USER CODE END 4 */

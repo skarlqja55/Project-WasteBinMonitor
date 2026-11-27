@@ -78,6 +78,33 @@ void HAL_MspInit(void)
   /* USER CODE END MspInit 1 */
 }
 
+void HAL_I2C_MspInit(I2C_HandleTypeDef *handle)
+{
+  if (handle->Instance != I2C1)
+    return;
+
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  GPIO_InitTypeDef pins = {
+    .Pin = GPIO_PIN_8 | GPIO_PIN_9,
+    .Mode = GPIO_MODE_AF_OD,
+    .Pull = GPIO_NOPULL,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+    .Alternate = GPIO_AF4_I2C1,
+  };
+  HAL_GPIO_Init(GPIOB, &pins);
+  __HAL_RCC_I2C1_CLK_ENABLE();
+}
+
+void HAL_I2C_MspDeInit(I2C_HandleTypeDef *handle)
+{
+  if (handle->Instance != I2C1)
+    return;
+
+  __HAL_RCC_I2C1_CLK_DISABLE();
+  HAL_GPIO_DeInit(GPIOB, GPIO_PIN_8 | GPIO_PIN_9);
+}
+
 /**
   * @brief UART MSP Initialization
   * This function configures the hardware resources used in this example
@@ -115,6 +142,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* USER CODE BEGIN USART1_MspInit 1 */
+    HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
 
     /* USER CODE END USART1_MspInit 1 */
   }
@@ -168,6 +197,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
     HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9|GPIO_PIN_10);
 
     /* USER CODE BEGIN USART1_MspDeInit 1 */
+    HAL_NVIC_DisableIRQ(USART1_IRQn);
 
     /* USER CODE END USART1_MspDeInit 1 */
   }

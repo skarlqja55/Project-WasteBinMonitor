@@ -5,57 +5,55 @@
 #include <arpa/inet.h>
 #include <mysql/mysql.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <sys/time.h>
 
 #define BUF_SIZE 1024
 #define COLLECT_DROP_PERCENT 20
 #define COLLECT_CONFIRM_COUNT 2
 #define BIN_COUNT 3
+#define CLIENT_TIMEOUT_SECONDS 2
 
 static const char *BIN_NAMES[BIN_COUNT] = { "A", "B", "C" };
 static int base_percent[BIN_COUNT];
 static int has_base = 0;
 static int low_count[BIN_COUNT] = {0, 0, 0};
 
-void send_bluetooth_status(int a, int b, int c)
+static int send_bluetooth(const char *message)
 {
-    int bt_fd;
-    char bt_msg[64];
-
-    snprintf(bt_msg, sizeof(bt_msg), "STATUS@%d@%d@%d\n", a, b, c);
-
-    bt_fd = open("/dev/rfcomm0", O_WRONLY | O_NOCTTY);
-    if (bt_fd == -1) {
+    int fd = open("/dev/rfcomm0", O_WRONLY | O_NOCTTY);
+    if (fd == -1) {
         perror("Bluetooth open");
-        return;
+        return 0;
     }
 
-    if (write(bt_fd, bt_msg, strlen(bt_msg)) == -1)
-        perror("Bluetooth write");
-    else
-        printf("BT SEND : %s", bt_msg);
-
-    close(bt_fd);
+    size_t remaining = strlen(message);
+    while (remaining > 0) {
+        ssize_t written = write(fd, message, remaining);
+        if (written < 0 && errno == EINTR)
+            continue;
+        if (written <= 0) {
+            close(fd);
+            return 0;
+        }
+        message += written;
+        remaining -= (size_t)written;
+    }
+    close(fd);
+    return 1;
 }
 
-void send_bluetooth_request(char bin)
+static void send_bluetooth_status(int a, int b, int c)
 {
-    int bt_fd;
-    char bt_msg[64];
+    char message[64];
+    snprintf(message, sizeof(message), "STATUS@%d@%d@%d\n", a, b, c);
+    send_bluetooth(message);
+}
 
-    snprintf(bt_msg, sizeof(bt_msg), "REQUEST@%c\n", bin);
-
-    bt_fd = open("/dev/rfcomm0", O_WRONLY | O_NOCTTY);
-    if (bt_fd == -1) {
-        perror("Bluetooth open");
-        return;
-    }
-
-    if (write(bt_fd, bt_msg, strlen(bt_msg)) == -1)
-        perror("Bluetooth write");
-    else
-        printf("BT REQUEST SEND : %s", bt_msg);
-
-    close(bt_fd);
+static const char *env_or(const char *name, const char *fallback)
+{
+    const char *value = getenv(name);
+    return value && *value ? value : fallback;
 }
 
 void load_base_from_db(MYSQL *conn)
@@ -114,6 +112,14 @@ void check_collection(MYSQL *conn, const int cur[BIN_COUNT])
     }
 
     for (int i = 0; i < BIN_COUNT; i++) {
+        if (cur[i] < 0) {
+            low_count[i] = 0;
+            continue;
+        }
+        if (base_percent[i] < 0) {
+            base_percent[i] = cur[i];
+            continue;
+        }
         int drop = base_percent[i] - cur[i];
 
         if (drop < COLLECT_DROP_PERCENT) {
@@ -140,11 +146,32 @@ void check_collection(MYSQL *conn, const int cur[BIN_COUNT])
     }
 }
 
+static int read_client_frame(int fd, char *buffer, size_t capacity)
+{
+    size_t length = 0;
+    while (length < capacity - 1) {
+        ssize_t received = read(fd, buffer + length, capacity - 1 - length);
+        if (received < 0 && errno == EINTR)
+            continue;
+        if (received < 0)
+            return 0;
+        buffer[length + (size_t)received] = '\0';
+        if (received == 0)
+            return length > 0; /* A peer write-close may terminate the frame. */
+        char *newline = memchr(buffer + length, '\n', (size_t)received);
+        if (newline != NULL) {
+            newline[1] = '\0';
+            return 1;
+        }
+        length += (size_t)received;
+    }
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     int serv_sock;
     int clnt_sock;
-    int len;
     int option = 1;
     struct sockaddr_in serv_addr;
     struct sockaddr_in clnt_addr;
@@ -164,9 +191,16 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    /* CHANGE_ME: 팀 환경의 MariaDB 비밀번호로 변경 */
-    if (mysql_real_connect(conn, "127.0.0.1", "iot", "CHANGE_ME", "iotdb",
-                           0, NULL, 0) == NULL) {
+    const char *password = getenv("WASTE_DB_PASSWORD");
+    if (password == NULL || *password == '\0') {
+        fprintf(stderr, "Set WASTE_DB_PASSWORD before starting the server.\n");
+        mysql_close(conn);
+        return 1;
+    }
+    if (mysql_real_connect(conn, env_or("WASTE_DB_HOST", "127.0.0.1"),
+                           env_or("WASTE_DB_USER", "iot"), password,
+                           env_or("WASTE_DB_NAME", "iotdb"),
+                           (unsigned int)atoi(env_or("WASTE_DB_PORT", "3306")), NULL, 0) == NULL) {
         fprintf(stderr, "DB CONNECT ERROR : %s\n", mysql_error(conn));
         mysql_close(conn);
         exit(1);
@@ -219,22 +253,13 @@ int main(int argc, char *argv[])
 
         printf("\nClient Connected : %s\n", inet_ntoa(clnt_addr.sin_addr));
 
-        memset(buf, 0, BUF_SIZE);
-        int total = 0;
-
-        while (total < BUF_SIZE - 1) {
-            len = read(clnt_sock, &buf[total], BUF_SIZE - 1 - total);
-            if (len <= 0)
-                break;
-
-            total += len;
-            buf[total] = '\0';
-
-            if (strchr(buf, '\n') != NULL)
-                break;
+        const struct timeval timeout = { .tv_sec = CLIENT_TIMEOUT_SECONDS };
+        if (setsockopt(clnt_sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+            perror("SO_RCVTIMEO");
+            close(clnt_sock);
+            continue;
         }
-
-        if (total > 0) {
+        if (read_client_frame(clnt_sock, buf, sizeof(buf))) {
             printf("RECV : %s", buf);
 
             char *ptr = strtok(buf, "@\r\n");
@@ -245,9 +270,13 @@ int main(int argc, char *argv[])
                 if (bin_str != NULL) {
                     char bin = bin_str[0];
 
-                    if (bin == 'A' || bin == 'B' || bin == 'C') {
+                    if (bin_str[1] == '\0' && (bin == 'A' || bin == 'B' || bin == 'C')) {
                         printf("USER REQUEST : BIN %c\n", bin);
-                        send_bluetooth_request(bin);
+                        char message[16];
+                        snprintf(message, sizeof(message), "REQUEST@%c\n", bin);
+                        /* This acknowledges a completed RFCOMM write, not MCU processing. */
+                        const char *reply = send_bluetooth(message) ? "OK\n" : "ERR\n";
+                        send(clnt_sock, reply, strlen(reply), MSG_NOSIGNAL);
                     } else {
                         printf("ERROR : Invalid BIN\n");
                     }

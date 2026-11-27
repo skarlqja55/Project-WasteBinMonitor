@@ -58,29 +58,8 @@
 
  * 아직 안 붙였으면 아래 기본값을 쓴다. */
 
-#ifndef DM_DATA_Pin
 
-#define DM_DATA_Pin         GPIO_PIN_7
 
-#define DM_DATA_GPIO_Port   GPIOA
-
-#endif
-
-#ifndef DM_CLK_Pin
-
-#define DM_CLK_Pin          GPIO_PIN_6
-
-#define DM_CLK_GPIO_Port    GPIOA
-
-#endif
-
-#ifndef DM_LATCH_Pin
-
-#define DM_LATCH_Pin        GPIO_PIN_6
-
-#define DM_LATCH_GPIO_Port  GPIOB
-
-#endif
 
 
 
