@@ -95,7 +95,7 @@ Arduino는 빈 통 거리 `EMPTY_DISTANCE`와 만재 거리 `FULL_DISTANCE`를 �
 
 관련 코드: [main.c](Core/Src/main.c), [dot_map.c](Core/Src/dot_map.c), [buzzer.c](Core/Src/buzzer.c), [LCD 헤더](Core/Inc/lcd1602.h)
 
-LCD 구현은 10월 백업과 동일한 원본을 로컬에서 연결해 검증했습니다. 원본 파일의 재배포 권한 확인이 필요해 공개 소스에 포함하지 않았습니다. 제공받은 파일을 연결하는 방법은 [STM32 빌드](#9-6-stm32)에 있습니다.
+[LCD1602 소스](Core/Src/lcd1602.c)는 작성자 남기범이 공개에 동의한 10월 프로젝트 원본입니다. 헤더의 `kccistc`는 당시 개발 계정명입니다. 원본의 I²C 7비트 주소는 `0x27`, HAL 호출 주소는 `0x4E`입니다.
 
 ### 웹 관제와 수거 기록
 
@@ -280,15 +280,17 @@ STM32CubeIDE에서 저장소 루트의 기존 프로젝트를 가져옵니다. `
 | Matrix DATA / CLK / LATCH | PA7 / PA6 / PB6 |
 | 부저 | PA0 / TIM2_CH1 |
 
-공개 권한이 있는 내부 사본을 구했다면 저장소 안에 복사하지 않고 해당 파일을 빌드에 지정할 수 있습니다.
+ARM GCC와 Newlib가 설치되어 있으면 저장소 루트에서 빌드합니다.
 
 ```bash
 make clean
-make LCD_SOURCE=/absolute/path/to/lcd1602.c
-tests/mock_console.sh /absolute/path/to/lcd1602.c
+make
+tests/mock_console.sh
 ```
 
-보드에 올릴 파일은 `build/waste-bin.elf`입니다. CubeIDE에서도 자체 보유한 LCD 원본을 `Core/Src/lcd1602.c`에 로컬로 복원한 다음 빌드할 수 있습니다. `waste-bin.ioc`를 재생성한 경우 생성된 파일과 수동 보완 코드를 비교한 뒤 적용합니다. CubeMX 재생성 자체는 별도로 확인해야 합니다. HAL I2C 파일은 [ST STM32F4 HAL v1.8.5](https://github.com/STMicroelectronics/stm32f4xx-hal-driver/tree/v1.8.5)에서 가져왔습니다.
+보드에 올릴 파일은 `build/waste-bin.elf`입니다. CubeIDE에서는 이 저장소의 프로젝트를 가져와 빌드합니다. `waste-bin.ioc`를 재생성한 경우 생성된 파일과 수동 보완 코드를 비교한 뒤 적용합니다. CubeMX 재생성은 별도로 확인해야 합니다.
+
+LCD 초기화와 출력은 10월 원본을 복구한 부분입니다. I²C1 MSP, USART1 IRQ와 UART 수신 큐, 빌드 및 모의 테스트는 이번 복구에서 보완했습니다. HAL I²C 파일의 출처와 라이선스는 [ST STM32F4 HAL v1.8.5](https://github.com/STMicroelectronics/stm32f4xx-hal-driver/tree/v1.8.5)에서 확인할 수 있습니다.
 
 ## 10. 트러블슈팅 경험
 
